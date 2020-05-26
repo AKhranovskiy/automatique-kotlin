@@ -2,3 +2,7 @@
 /shelf/
 /workspace.xml
 /modules/*.iml
+/dictionaries/
+/codeStyles/
+kotlinScripting.xml
+jarRepositories.xml
