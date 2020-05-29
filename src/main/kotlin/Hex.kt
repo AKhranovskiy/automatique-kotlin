@@ -17,7 +17,7 @@ data class Hex(val q: Int = 0, val r: Int = 0, val s: Int = 0 - q - r) {
 
     fun direction(direction: Int): Hex {
         require(direction in (0..5))
-        return Hex.DIRECTIONS[direction]
+        return DIRECTIONS[direction]
     }
 
     fun neighbor(direction: Int): Hex = this + direction(direction)
@@ -49,8 +49,8 @@ data class Matrix2(val m00: Double, val m10: Double, val m01: Double, val m11: D
 }
 
 sealed class Orientation(
-    val f0: Double, val f1: Double, val f2: Double, val f3: Double,
-    val b0: Double, val b1: Double, val b2: Double, val b3: Double,
+    f0: Double, f1: Double, f2: Double, f3: Double,
+    b0: Double, b1: Double, b2: Double, b3: Double,
     val start_angle: Double
 ) {
     companion object {
@@ -105,24 +105,24 @@ data class FractionalHex(val q: Double = 0.0, val r: Double = 0.0, val s: Double
 }
 
 data class Layout(val orientation: Orientation, val size: Size, val origin: Point) {
-    fun to_pixel(hex: Hex): Point =
+    fun toPixel(hex: Hex): Point =
         Point(orientation.forward * hex.asVector2() * size.asVector2() + origin.asVector2())
 
-    fun to_hex(point: Point): FractionalHex =
+    fun toHex(point: Point): FractionalHex =
         ((point.asVector2() - origin.asVector2()) / size.asVector2()).let {
             orientation.backward * it
         }.let {
             FractionalHex(it.x, it.y, -it.x - it.y)
         }
 
-    fun corner_offset(corner: Int): Point {
+    private fun cornerOffset(corner: Int): Point {
         val angle = 2.0 * kotlin.math.PI * (orientation.start_angle + corner) / 6.0
         return Point(size.asVector2() * Vector2(cos(angle), sin(angle)))
     }
 
-    fun polygon_corners(hex: Hex): Pair<Point, List<Point>> =
-        to_pixel(hex).let { center ->
-            center to (0..6).map { center.asVector2() + corner_offset(it).asVector2() }.map {
+    fun polygonCorners(hex: Hex): Pair<Point, List<Point>> =
+        toPixel(hex).let { center ->
+            center to (0..6).map { center.asVector2() + cornerOffset(it).asVector2() }.map {
                 Point(it)
             }
         }
