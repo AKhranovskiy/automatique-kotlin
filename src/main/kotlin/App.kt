@@ -49,7 +49,9 @@ class MainComponent : RComponent<RProps, RState>() {
                     backgroundColor = Color.lemonChiffon
                     flex(flexGrow = 1.0)
                 }
-                child(Animation::class) {}
+                child(Animation::class) {
+                    this.attrs.animator = AnimatedHexGrid()
+                }
             }
         }
     }

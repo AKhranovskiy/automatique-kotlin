@@ -1,4 +1,3 @@
-import kotlinx.html.AreaShape
 import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.RenderingContext
@@ -10,18 +9,20 @@ import react.dom.canvas
 import react.setState
 import kotlin.browser.window
 
-external interface AnimationProps : RProps
+interface Animator {
+    fun draw(ctx: CanvasRenderingContext2D)
+}
+
+external interface AnimationProps : RProps {
+    var animator: Animator
+}
 
 external interface AnimationState : RState {
-    var angle: Int
+    var key: Double
 }
 
 class Animation : RComponent<AnimationProps, AnimationState>() {
     private var rAF: Int = 0
-
-    override fun AnimationState.init() {
-        angle = 0
-    }
 
     override fun componentDidMount() {
         rAF = window.requestAnimationFrame(::updateAnimationState)
@@ -29,10 +30,11 @@ class Animation : RComponent<AnimationProps, AnimationState>() {
 
     @Suppress("UNUSED_PARAMETER")
     private fun updateAnimationState(time: Double) {
-        setState {
-            angle += 1
-        }
         rAF = window.requestAnimationFrame(::updateAnimationState)
+        setState {
+            key = time
+        }
+
     }
 
     override fun componentWillUnmount() {
@@ -41,14 +43,13 @@ class Animation : RComponent<AnimationProps, AnimationState>() {
 
     override fun RBuilder.render() {
         child(Canvas::class) {
-            attrs.angle = state.angle
+            attrs.animator = props.animator
         }
     }
 }
 
-
 external interface CanvasProps : RProps {
-    var angle: Int
+    var animator: Animator
 }
 
 class Canvas : RComponent<CanvasProps, RState>() {
@@ -59,43 +60,9 @@ class Canvas : RComponent<CanvasProps, RState>() {
     }
 
     override fun componentDidUpdate(prevProps: CanvasProps, prevState: RState, snapshot: Any) {
-        val width = context?.canvas?.width?.toDouble() ?: return
-        val height = context?.canvas?.height?.toDouble() ?: return
-
-        val orientation = when (props.angle % 2) {
-            0 -> Orientation.Pointy
-            else -> Orientation.Flat
-        }
-
-        val layout = Layout(orientation, Size(20.0, 20.0), Point(0.0, 0.0))
-
         context?.let { ctx ->
             ctx.save()
-
-            ctx.clearRect(0.0, 0.0, width, height)
-
-            ctx.beginPath()
-
-            (-50..50).forEach { q ->
-                (-50..50).forEach { r ->
-                    layout.polygon_corners(Hex(q, r)).let { (_, points) ->
-                        ctx.moveTo(points[0].x, points[0].y)
-                        points.drop(1).forEach {
-                            ctx.lineTo(it.x, it.y)
-                        }
-                        ctx.lineTo(points[0].x, points[0].y)
-                    }
-                }
-            }
-
-            ctx.closePath()
-            ctx.stroke()
-
-
-//            ctx.translate(width / 2, height / 2)
-//            ctx.rotate(props.angle * kotlin.math.PI / 180)
-//            ctx.fillRect(-width / 4, -height / 4, width / 2, height / 2)
-
+            props.animator.draw(ctx)
             ctx.restore()
         }
     }
@@ -122,7 +89,6 @@ class PureCanvas : RComponent<PureCanvasProps, RState>() {
                 (element as? HTMLCanvasElement)?.let {
                     props.contextRef(it.getContext("2d"))
                 }
-
             }
 
         }
