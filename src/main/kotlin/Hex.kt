@@ -5,7 +5,7 @@ import kotlin.math.sin
 
 data class Hex(val q: Int = 0, val r: Int = 0, val s: Int = 0 - q - r) {
     init {
-//        require(q + r + s == 0) { "q=$q, r=$r and s=$s must add up to 0" }
+        require(q + r + s == 0) { "q=$q, r=$r and s=$s must add up to 0" }
     }
 
     val length get() = ((q.absoluteValue + r.absoluteValue + s.absoluteValue) / 2f).roundToInt()
@@ -29,7 +29,7 @@ data class Hex(val q: Int = 0, val r: Int = 0, val s: Int = 0 - q - r) {
     companion object {
         val DIRECTIONS = listOf(
             Hex(1, 0, -1), Hex(1, -1, 0), Hex(0, -1, 1),
-            Hex(-1, 0, 1), Hex(-1, -1, 0), Hex(0, 1, -1)
+            Hex(-1, 0, 1), Hex(-1, 1, 0), Hex(0, 1, -1)
         )
     }
 }
@@ -52,7 +52,7 @@ sealed class Orientation(
     val f0: Double, val f1: Double, val f2: Double, val f3: Double,
     val b0: Double, val b1: Double, val b2: Double, val b3: Double,
     val start_angle: Double
-){
+) {
     companion object {
         val SQRT3 = kotlin.math.sqrt(3.0)
     }
