@@ -1,5 +1,6 @@
 import org.w3c.dom.CanvasRenderingContext2D
 import kotlin.browser.window
+import kotlin.math.absoluteValue
 
 fun <T, U> cartesianProduct(a: Iterable<T>, b: Iterable<U>): List<Pair<T, U>> =
     a.flatMap { va ->
@@ -17,7 +18,7 @@ class AnimatedHexGrid : Animator {
     private val pointyLayout = Layout(Orientation.Pointy, size, origin)
     private val flatLayout = Layout(Orientation.Flat, size, origin)
 
-    private val hexes = ((0..10) x (0..10)).map { (q, r) -> Hex(q, r) }
+    private val hexes = ((-20..45) x (0..30)).map { (q, r) -> Hex(q, r) }
 
     private fun List<Hex>.toGrid(layout: Layout) = map { layout.polygonCorners(it) }
 
@@ -36,9 +37,20 @@ class AnimatedHexGrid : Animator {
         ctx.lineTo(start.x, start.y)
     }
 
+    private var timestamps = mutableListOf<Double>()
+    private val timestampsLength = 100
+
+    private fun Double.equalsDelta(other: Double) = (this / other - 1.0).absoluteValue < 0.000001
+
     private fun drawFps(ctx: CanvasRenderingContext2D) {
-        val diff = window.performance.now() - timestamp
+        timestamps.add(window.performance.now() - timestamp)
         timestamp = window.performance.now()
+
+        if (timestamps.size >= timestampsLength) {
+            timestamps = timestamps.takeLast(timestampsLength).toMutableList()
+        }
+        val avg = timestamps.sum() / timestamps.size
+        val fps = (if (avg.equalsDelta(0.0)) 0.0 else 1000.0 / avg).toInt()
 
         ctx.save()
         ctx.beginPath()
@@ -47,7 +59,7 @@ class AnimatedHexGrid : Animator {
         ctx.closePath()
         ctx.fillStyle = "black"
         ctx.font = "bold 48px monospace"
-        ctx.fillText("fps ${(1000 / diff).toInt()}", 5.0, 40.0, 70.0)
+        ctx.fillText("fps $fps", 5.0, 40.0, 70.0)
         ctx.restore()
     }
 
@@ -55,7 +67,7 @@ class AnimatedHexGrid : Animator {
 
     override fun draw(ctx: CanvasRenderingContext2D) {
         val grid = if (isFlat) flatGrid else pointyGrid
-        isFlat = !isFlat
+//        isFlat = !isFlat
 
         val width = ctx.canvas.width.toDouble()
         val height = ctx.canvas.height.toDouble()
@@ -63,10 +75,11 @@ class AnimatedHexGrid : Animator {
         ctx.beginPath()
         ctx.clearRect(0.0, 0.0, width, height)
 
-        grid.forEach { (center, corners) ->
-            drawSides(ctx, corners)
-            drawCenter(ctx, center)
-        }
+        grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
+            .forEach { (center, corners) ->
+                drawSides(ctx, corners)
+                drawCenter(ctx, center)
+            }
 
         ctx.stroke()
 
