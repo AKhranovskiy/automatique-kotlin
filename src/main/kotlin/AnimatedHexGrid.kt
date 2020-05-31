@@ -184,15 +184,24 @@ class AnimatedHexGrid : Animator {
             hex in selectedHex -> selectedHex -= hex
             // Ctrl click calls context menu.
             event.ctrlKey -> Unit
+            event.shiftKey && event.altKey -> {
+                spoil(hex)
+                offscreenCanvasPond = null
+            }
             event.shiftKey -> selectedHex += hex
-            event.altKey -> spoil(hex)
+            event.altKey -> {
+                pond.clear()
+                spoil(hex)
+                offscreenCanvasPond = null
+            }
             else -> selectedHex.apply {
                 clear()
                 add(hex)
-
-                pond[hex]?.let {
-                    console.log("Power=${it}")
-                }
+            }
+        }
+        selectedHex.forEach { hex ->
+            pond[hex]?.let { power ->
+                console.log("$hex->$power")
             }
         }
     }
@@ -201,15 +210,18 @@ class AnimatedHexGrid : Animator {
     private var offscreenCanvasPond: HTMLCanvasElement? = null
 
     private fun spoil(root: Hex) {
-        pond.clear()
-        offscreenCanvasPond = null
-
-        pond[root] = 100
-        (0..40).forEach { _ ->
-            pond += pond.flatMap { (hex, power) -> buildPond(hex, (power - 5).coerceAtLeast(0)) }
-                .filterNot { it.first in pond }
+        val newPond = mutableMapOf<Hex, Int>()
+        newPond[root] = 100
+        (0..10).forEach { _ ->
+            newPond += newPond.flatMap { (hex, power) ->
+                buildPond(
+                    hex,
+                    (power - 5).coerceAtLeast(0)
+                )
+            }.filterNot { it.first in newPond }
         }
 
+        pond += newPond.filterNot { it.key in pond }
     }
 
     private fun buildPond(root: Hex, power: Int) =
