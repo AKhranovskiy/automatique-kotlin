@@ -119,7 +119,9 @@ class AnimatedHexGrid : Animator {
         if (selectedHex != null && offscreenCanvasSelection == null) {
             offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
                 fillStyle = "green"
-                drawSides(this, layout.polygonCorners(selectedHex!!).second)
+                selectedHex.map { layout.polygonCorners(it).second }.forEach {
+                    drawSides(this, it)
+                }
                 fill()
             }
         }
@@ -143,15 +145,19 @@ class AnimatedHexGrid : Animator {
     }
 
     private var offscreenCanvasSelection: HTMLCanvasElement? = null
-    private var selectedHex: Hex? = null
-        set(value) {
-            console.log("Change selection $field->$value")
-            field = value
-            offscreenCanvasSelection = null
-        }
+    private val selectedHex = mutableSetOf<Hex>()
 
     private fun onEventClick(event: MouseEvent) {
-        selectedHex =
-            event.let { Point(it.offsetX, it.offsetY) }.let { layout.toHex(it).round() }
+        offscreenCanvasSelection = null
+        val hex = event.let { Point(it.offsetX, it.offsetY) }.let { layout.toHex(it).round() }
+
+        when {
+            hex in selectedHex -> selectedHex -= hex
+            event.ctrlKey || event.shiftKey -> selectedHex += hex
+            else -> selectedHex.apply {
+                clear()
+                add(hex)
+            }
+        }
     }
 }
