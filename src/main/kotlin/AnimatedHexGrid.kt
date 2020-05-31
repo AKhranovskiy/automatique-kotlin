@@ -118,17 +118,18 @@ class AnimatedHexGrid : Animator {
 
         if (selectedHex != null && offscreenCanvasSelection == null) {
             offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
-                fillStyle = "green"
+                strokeStyle = "lightgreen"
+                lineWidth = 4.0
                 selectedHex.map { layout.polygonCorners(it).second }.forEach {
                     drawSides(this, it)
                 }
-                fill()
+                stroke()
             }
         }
 
         ctx.clearRect(0.0, 0.0, canvasSize.x, canvasSize.y)
-        offscreenCanvasSelection?.let { ctx.drawImage(it, 0.0, 0.0) }
         offscreenCanvasGrid?.let { ctx.drawImage(it, 0.0, 0.0) }
+        offscreenCanvasSelection?.let { ctx.drawImage(it, 0.0, 0.0) }
 
         drawFps(ctx)
     }
@@ -153,7 +154,8 @@ class AnimatedHexGrid : Animator {
 
         when {
             hex in selectedHex -> selectedHex -= hex
-            event.ctrlKey || event.shiftKey -> selectedHex += hex
+            // Ctrl click calls context menu.
+            event.shiftKey -> selectedHex += hex
             else -> selectedHex.apply {
                 clear()
                 add(hex)
