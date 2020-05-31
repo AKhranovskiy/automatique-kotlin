@@ -1,3 +1,4 @@
+import kotlinx.html.InputType
 import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.events.Event
@@ -127,7 +128,20 @@ class AnimatedHexGrid : Animator {
             }
         }
 
+        if (pond.isNotEmpty() && offscreenCanvasPond == null) {
+            offscreenCanvasPond = createOffscreenCanvas(canvasSize) {
+                pond.map {
+                    layout.polygonCorners(it.hex).second to it.power.coerceIn(0, 10) / 10.0
+                }.forEach { (points, alpha) ->
+                    fillStyle = "rgb(255, 0, 0, $alpha)"
+                    drawSides(this, points)
+                    fill()
+                }
+            }
+        }
+
         ctx.clearRect(0.0, 0.0, canvasSize.x, canvasSize.y)
+        offscreenCanvasPond?.let { ctx.drawImage(it, 0.0, 0.0) }
         offscreenCanvasGrid?.let { ctx.drawImage(it, 0.0, 0.0) }
         offscreenCanvasSelection?.let { ctx.drawImage(it, 0.0, 0.0) }
 
@@ -155,11 +169,28 @@ class AnimatedHexGrid : Animator {
         when {
             hex in selectedHex -> selectedHex -= hex
             // Ctrl click calls context menu.
+            event.ctrlKey -> Unit
             event.shiftKey -> selectedHex += hex
+            event.altKey -> spoil(hex)
             else -> selectedHex.apply {
                 clear()
                 add(hex)
             }
         }
+    }
+
+    private data class Drop(val hex: Hex, val power: Int)
+
+    private val pond = mutableSetOf<Drop>()
+    private var offscreenCanvasPond: HTMLCanvasElement? = null
+
+    private fun spoil(root: Hex) {
+        pond.clear()
+        offscreenCanvasPond = null
+
+        pond += Drop(root, 10)
+        var nb = root.neighbors() - pond.map { it.hex }
+        var drops = nb.map { Drop(it, (0..9).random()) }
+        pond.addAll(drops)
     }
 }
