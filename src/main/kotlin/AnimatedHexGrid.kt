@@ -1,5 +1,8 @@
 import org.w3c.dom.CanvasRenderingContext2D
+import org.w3c.dom.HTMLCanvasElement
 import kotlin.browser.window
+import kotlin.browser.document
+import kotlin.dom.createElement
 import kotlin.math.absoluteValue
 
 fun <T, U> cartesianProduct(a: Iterable<T>, b: Iterable<U>): List<Pair<T, U>> =
@@ -18,7 +21,7 @@ class AnimatedHexGrid : Animator {
     private val pointyLayout = Layout(Orientation.Pointy, size, origin)
     private val flatLayout = Layout(Orientation.Flat, size, origin)
 
-    private val hexes = ((-20..45) x (0..30)).map { (q, r) -> Hex(q, r) }
+    private val hexes = ((-20..45) x (-30..30)).map { (q, r) -> Hex(q, r) }
 
     private fun List<Hex>.toGrid(layout: Layout) = map { layout.polygonCorners(it) }
 
@@ -69,20 +72,36 @@ class AnimatedHexGrid : Animator {
         val grid = if (isFlat) flatGrid else pointyGrid
 //        isFlat = !isFlat
 
-        val width = ctx.canvas.width.toDouble()
-        val height = ctx.canvas.height.toDouble()
+        if (offscreenCanvasGrid == null || offscreenCanvasGrid?.width != ctx.canvas.width ||
+            offscreenCanvasGrid?.height != ctx.canvas.height
+        ) {
+            offscreenCanvasGrid = document.createElement("canvas") {}.let {
+                it as HTMLCanvasElement
+            }.apply {
+                this.width = ctx.canvas.width
+                this.height = ctx.canvas.height
+            }.apply {
+                (getContext("2d") as CanvasRenderingContext2D).apply {
+                    val width = canvas.width.toDouble()
+                    val height = canvas.height.toDouble()
 
-        ctx.beginPath()
-        ctx.clearRect(0.0, 0.0, width, height)
+                    beginPath()
 
-        grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
-            .forEach { (center, corners) ->
-                drawSides(ctx, corners)
-                drawCenter(ctx, center)
+                    grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
+                        .forEach { (center, corners) ->
+                            drawSides(this, corners)
+                            drawCenter(this, center)
+                        }
+
+                    stroke()
+                }
             }
+        }
 
-        ctx.stroke()
+        ctx.drawImage(offscreenCanvasGrid!!, 0.0, 0.0)
 
         drawFps(ctx)
     }
+
+    private var offscreenCanvasGrid: HTMLCanvasElement? = null
 }
