@@ -1,5 +1,7 @@
 import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
+import org.w3c.dom.events.Event
+import org.w3c.dom.events.MouseEvent
 import kotlin.browser.window
 import kotlin.browser.document
 import kotlin.dom.createElement
@@ -13,8 +15,6 @@ fun <T, U> cartesianProduct(a: Iterable<T>, b: Iterable<U>): List<Pair<T, U>> =
 infix fun <T, U> Iterable<T>.x(other: Iterable<U>) = cartesianProduct(this, other)
 
 class AnimatedHexGrid : Animator {
-    private var isFlat = true
-
     private val size = Size(20.0, 20.0)
     private val origin = Point(0.0, 0.0)
 
@@ -25,8 +25,8 @@ class AnimatedHexGrid : Animator {
 
     private fun List<Hex>.toGrid(layout: Layout) = map { layout.polygonCorners(it) }
 
-    private val pointyGrid = hexes.toGrid(pointyLayout)
-    private val flatGrid = hexes.toGrid(flatLayout)
+    private val layout = flatLayout
+    private val grid = hexes.toGrid(layout)
 
     private fun drawCenter(ctx: CanvasRenderingContext2D, point: Point) {
         ctx.moveTo(point.x - 1, point.y - 1)
@@ -68,40 +68,90 @@ class AnimatedHexGrid : Animator {
 
     private var timestamp = window.performance.now()
 
+    private var canvasSize = Size(0.0, 0.0)
+        set(value) {
+            if (field != value) {
+                onResize()
+            }
+            field = value
+        }
+
+    private fun onResize() {
+        offscreenCanvasGrid = null
+        offscreenCanvasSelection = null
+    }
+
+    private val CanvasRenderingContext2D.size: Size
+        get() = Size(canvas.width.toDouble(), canvas.height.toDouble())
+
+    private fun createOffscreenCanvas(
+        size: Size,
+        onContext2D: CanvasRenderingContext2D.() -> Unit
+    ) = document.createElement("canvas") {}.let {
+        it as HTMLCanvasElement
+    }.apply {
+        width = size.x.toInt()
+        height = size.y.toInt()
+    }.apply {
+        onContext2D(getContext("2d") as CanvasRenderingContext2D)
+    }
+
     override fun draw(ctx: CanvasRenderingContext2D) {
-        val grid = if (isFlat) flatGrid else pointyGrid
-//        isFlat = !isFlat
+        canvasSize = ctx.size
 
-        if (offscreenCanvasGrid == null || offscreenCanvasGrid?.width != ctx.canvas.width ||
-            offscreenCanvasGrid?.height != ctx.canvas.height
-        ) {
-            offscreenCanvasGrid = document.createElement("canvas") {}.let {
-                it as HTMLCanvasElement
-            }.apply {
-                this.width = ctx.canvas.width
-                this.height = ctx.canvas.height
-            }.apply {
-                (getContext("2d") as CanvasRenderingContext2D).apply {
-                    val width = canvas.width.toDouble()
-                    val height = canvas.height.toDouble()
+        if (offscreenCanvasGrid == null) {
+            offscreenCanvasGrid = createOffscreenCanvas(canvasSize) {
+                val width = canvas.width.toDouble()
+                val height = canvas.height.toDouble()
 
-                    beginPath()
+                beginPath()
 
-                    grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
-                        .forEach { (center, corners) ->
-                            drawSides(this, corners)
-                            drawCenter(this, center)
-                        }
+                grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
+                    .forEach { (center, corners) ->
+                        drawSides(this, corners)
+                        drawCenter(this, center)
+                    }
 
-                    stroke()
-                }
+                stroke()
             }
         }
 
-        ctx.drawImage(offscreenCanvasGrid!!, 0.0, 0.0)
+        if (selectedHex != null && offscreenCanvasSelection == null) {
+            offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
+                fillStyle = "green"
+                drawSides(this, layout.polygonCorners(selectedHex!!).second)
+                fill()
+            }
+        }
+
+        ctx.clearRect(0.0, 0.0, canvasSize.x, canvasSize.y)
+        offscreenCanvasSelection?.let { ctx.drawImage(it, 0.0, 0.0) }
+        offscreenCanvasGrid?.let { ctx.drawImage(it, 0.0, 0.0) }
 
         drawFps(ctx)
     }
 
     private var offscreenCanvasGrid: HTMLCanvasElement? = null
+
+    fun onEvent(event: Event) {
+        when (event.type) {
+            "click" -> {
+                onEventClick(event as MouseEvent)
+            }
+            else -> Unit
+        }
+    }
+
+    private var offscreenCanvasSelection: HTMLCanvasElement? = null
+    private var selectedHex: Hex? = null
+        set(value) {
+            console.log("Change selection $field->$value")
+            field = value
+            offscreenCanvasSelection = null
+        }
+
+    private fun onEventClick(event: MouseEvent) {
+        selectedHex =
+            event.let { Point(it.offsetX, it.offsetY) }.let { layout.toHex(it).round() }
+    }
 }

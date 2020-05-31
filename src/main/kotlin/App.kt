@@ -11,6 +11,8 @@ import kotlinx.css.px
 import kotlinx.css.vh
 import kotlinx.css.vw
 import kotlinx.css.width
+import kotlinx.html.js.onClickFunction
+import org.w3c.dom.events.Event
 import react.RBuilder
 import react.RComponent
 import react.RProps
@@ -28,6 +30,8 @@ fun renderReactApp() {
 }
 
 class MainComponent : RComponent<RProps, RState>() {
+    private val animator = AnimatedHexGrid()
+
     override fun RBuilder.render() {
         styledDiv {
             css {
@@ -49,8 +53,9 @@ class MainComponent : RComponent<RProps, RState>() {
                     backgroundColor = Color.lemonChiffon
                     flex(flexGrow = 1.0)
                 }
+                attrs.onClickFunction = { animator.onEvent(it.asDynamic().nativeEvent as Event) }
                 child(Animation::class) {
-                    this.attrs.animator = AnimatedHexGrid()
+                    this.attrs.animator = animator
                 }
             }
         }
