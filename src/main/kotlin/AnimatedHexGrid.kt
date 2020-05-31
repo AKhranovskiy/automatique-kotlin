@@ -1,12 +1,14 @@
-import kotlinx.html.InputType
+import kotlinx.css.Contain
 import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.HTMLCanvasElement
+import org.w3c.dom.Path2D
 import org.w3c.dom.events.Event
 import org.w3c.dom.events.MouseEvent
-import kotlin.browser.window
 import kotlin.browser.document
+import kotlin.browser.window
 import kotlin.dom.createElement
 import kotlin.math.absoluteValue
+import kotlin.math.max
 
 fun <T, U> cartesianProduct(a: Iterable<T>, b: Iterable<U>): List<Pair<T, U>> =
     a.flatMap { va ->
@@ -29,16 +31,20 @@ class AnimatedHexGrid : Animator {
     private val layout = flatLayout
     private val grid = hexes.toGrid(layout)
 
-    private fun drawCenter(ctx: CanvasRenderingContext2D, point: Point) {
-        ctx.moveTo(point.x - 1, point.y - 1)
-        ctx.arc(point.x, point.y, 1.0, 0.0, kotlin.math.PI * 2.0)
+    private fun drawCenter(point: Point): Path2D {
+        val path = Path2D()
+        path.moveTo(point.x - 1, point.y - 1)
+        path.arc(point.x, point.y, 1.0, 0.0, kotlin.math.PI * 2.0)
+        return path
     }
 
-    private fun drawSides(ctx: CanvasRenderingContext2D, corners: List<Point>) {
+    private fun drawSides(corners: List<Point>): Path2D {
         val start = corners.first()
-        ctx.moveTo(start.x, start.y)
-        corners.drop(1).forEach { ctx.lineTo(it.x, it.y) }
-        ctx.lineTo(start.x, start.y)
+        val path = Path2D()
+        path.moveTo(start.x, start.y)
+        corners.drop(1).forEach { path.lineTo(it.x, it.y) }
+        path.lineTo(start.x, start.y)
+        return path
     }
 
     private var timestamps = mutableListOf<Double>()
@@ -105,48 +111,55 @@ class AnimatedHexGrid : Animator {
                 val width = canvas.width.toDouble()
                 val height = canvas.height.toDouble()
 
-                beginPath()
+                val path = Path2D()
 
                 grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
                     .forEach { (center, corners) ->
-                        drawSides(this, corners)
-                        drawCenter(this, center)
+                        path.addPath(drawSides(corners))
+                        path.addPath(drawCenter(center))
                     }
 
-                stroke()
+                stroke(path)
             }
         }
 
-        if (selectedHex != null && offscreenCanvasSelection == null) {
+        if (selectedHex.isNotEmpty() && offscreenCanvasSelection == null) {
             offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
                 strokeStyle = "lightgreen"
                 lineWidth = 4.0
+
+                val path = Path2D()
                 selectedHex.map { layout.polygonCorners(it).second }.forEach {
-                    drawSides(this, it)
+                    path.addPath(drawSides(it))
                 }
-                stroke()
+                stroke(path)
             }
         }
 
         if (pond.isNotEmpty() && offscreenCanvasPond == null) {
             offscreenCanvasPond = createOffscreenCanvas(canvasSize) {
-                pond.map {
-                    layout.polygonCorners(it.hex).second to it.power.coerceIn(0, 10) / 10.0
+                pond.map { (hex, power) ->
+                    layout.polygonCorners(hex).second to power.coerceIn(0, 100) / 100.0
                 }.forEach { (points, alpha) ->
+                    val path = drawSides(points)
                     fillStyle = "rgb(255, 0, 0, $alpha)"
-                    drawSides(this, points)
-                    fill()
+                    fill(path)
                 }
             }
         }
 
-        ctx.clearRect(0.0, 0.0, canvasSize.x, canvasSize.y)
-        offscreenCanvasPond?.let { ctx.drawImage(it, 0.0, 0.0) }
-        offscreenCanvasGrid?.let { ctx.drawImage(it, 0.0, 0.0) }
-        offscreenCanvasSelection?.let { ctx.drawImage(it, 0.0, 0.0) }
+        ctx.fillStyle = "#fff"
+        ctx.fillRect(0.0, 0.0, canvasSize.x, canvasSize.y)
+
+        offscreenCanvasPond?.copyOn(ctx)
+//        offscreenCanvasGrid?.copyOn(ctx)
+        offscreenCanvasSelection?.copyOn(ctx)
 
         drawFps(ctx)
     }
+
+    private fun HTMLCanvasElement.copyOn(ctx: CanvasRenderingContext2D) =
+        ctx.drawImage(this, 0.0, 0.0)
 
     private var offscreenCanvasGrid: HTMLCanvasElement? = null
 
@@ -164,7 +177,8 @@ class AnimatedHexGrid : Animator {
 
     private fun onEventClick(event: MouseEvent) {
         offscreenCanvasSelection = null
-        val hex = event.let { Point(it.offsetX, it.offsetY) }.let { layout.toHex(it).round() }
+        val hex =
+            event.let { Point(it.offsetX, it.offsetY) }.let { layout.toHex(it).round() }
 
         when {
             hex in selectedHex -> selectedHex -= hex
@@ -175,22 +189,29 @@ class AnimatedHexGrid : Animator {
             else -> selectedHex.apply {
                 clear()
                 add(hex)
+
+                pond[hex]?.let {
+                    console.log("Power=${it}")
+                }
             }
         }
     }
 
-    private data class Drop(val hex: Hex, val power: Int)
-
-    private val pond = mutableSetOf<Drop>()
+    private val pond = mutableMapOf<Hex, Int>()
     private var offscreenCanvasPond: HTMLCanvasElement? = null
 
     private fun spoil(root: Hex) {
         pond.clear()
         offscreenCanvasPond = null
 
-        pond += Drop(root, 10)
-        var nb = root.neighbors() - pond.map { it.hex }
-        var drops = nb.map { Drop(it, (0..9).random()) }
-        pond.addAll(drops)
+        pond[root] = 100
+        (0..40).forEach { _ ->
+            pond += pond.flatMap { (hex, power) -> buildPond(hex, (power - 5).coerceAtLeast(0)) }
+                .filterNot { it.first in pond }
+        }
+
     }
+
+    private fun buildPond(root: Hex, power: Int) =
+        root.neighbors().map { it to (0..power).random() }.filter { it.second > 0 }
 }

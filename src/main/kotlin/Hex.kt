@@ -122,7 +122,7 @@ data class Layout(val orientation: Orientation, val size: Size, val origin: Poin
 
     fun polygonCorners(hex: Hex): Pair<Point, List<Point>> =
         toPixel(hex).let { center ->
-            center to (0..6).map { center.asVector2() + cornerOffset(it).asVector2() }.map {
+            center to (0..5).map { center.asVector2() + cornerOffset(it).asVector2() }.map {
                 Point(it)
             }
         }
