@@ -105,7 +105,9 @@ abstract class CanvasLayer {
 
     fun draw(destination: CanvasRenderingContext2D) {
         if (isInvalidated) {
+            ctx.save()
             onDraw()
+            ctx.restore()
             isInvalidated = false
         }
         canvas.copyOn(destination)
@@ -148,41 +150,44 @@ class GridLayer(private val hexMap: HexMap, private val showCenter: Boolean = fa
 
 class CoordinatesLayer(private val hexMap: HexMap) : CanvasLayer() {
     override fun onDraw() {
+        ctx.textBaseline = CanvasTextBaseline.TOP
+        ctx.font = "bold ${hexMap.config.hexSize.x / 3}pt monospace"
+
         hexMap.grid
             .filter { (_, polygon) -> rect.contains(polygon.center) }
             .keys.forEach { drawCoordinates(it) }
     }
 
-    private fun formatHexCoordinate(name: String, value: Int): String = when {
-        value == 0 -> name
-        value > 0 -> "+$value"
-        else -> value.toString()
-    }
-
     private fun drawCoordinates(hex: Hex) {
         val center = hexMap.layout.toPixel(hex)
-        ctx.font = "bold ${hexMap.config.hexSize.x / 3}pt monospace"
-        val q = formatHexCoordinate("q", hex.q)
-        val r = formatHexCoordinate("r", hex.r)
-        val s = formatHexCoordinate("s", hex.s)
+        drawQ(center, hex)
+        drawR(center, hex)
+        drawS(center, hex)
+    }
 
-        ctx.textBaseline = CanvasTextBaseline.TOP
-
+    private fun drawQ(center: Point, hex: Hex) {
         ctx.fillStyle = "green"
         ctx.fillText(
-            q,
+            formatHexCoordinate("q", hex.q),
             center.x - hexMap.config.hexSize.x * 5 / 8,
             center.y - hexMap.config.hexSize.y / 2
         )
+    }
 
+    private fun drawR(center: Point, hex: Hex) {
+        val r = formatHexCoordinate("r", hex.r)
         val rx = ctx.measureText(r)
+
         ctx.fillStyle = "blue"
         ctx.fillText(
             r,
             center.x + hexMap.config.hexSize.x * 5 / 8 - rx.width,
             center.y - hexMap.config.hexSize.y / 2
         )
+    }
 
+    private fun drawS(center: Point, hex: Hex) {
+        val s = formatHexCoordinate("s", hex.s)
         val sx = ctx.measureText(s)
         ctx.fillStyle = "red"
         ctx.fillText(
@@ -191,6 +196,13 @@ class CoordinatesLayer(private val hexMap: HexMap) : CanvasLayer() {
             center.y + hexMap.config.hexSize.y / 4
         )
     }
+
+    private fun formatHexCoordinate(name: String, value: Int): String = when (value) {
+        0 -> name
+        else -> value.toSignedString()
+    }
+
+    private fun Int.toSignedString(): String = if (this > 0) "+$this" else "$this"
 }
 
 class AnimatedHexGrid : Animator {
