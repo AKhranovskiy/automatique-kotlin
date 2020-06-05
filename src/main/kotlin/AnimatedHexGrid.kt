@@ -10,7 +10,6 @@ import kotlin.browser.document
 import kotlin.browser.window
 import kotlin.dom.createElement
 import kotlin.math.absoluteValue
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.properties.ObservableProperty
 import kotlin.properties.ReadWriteProperty
@@ -38,9 +37,7 @@ inline fun <T> distinctObservable(
 }
 
 class HexMap {
-    var config: HexConfig by distinctObservable(HexConfig(), { _, new ->
-        layout = Layout(new.orientation, new.hexSize, origin)
-    })
+    var config: HexConfig by distinctObservable(HexConfig()) { _, _ -> updateLayout() }
 
     var size: Size by distinctObservable(Size(0.0, 0.0), { _, _ ->
         val width = config.hexSize.x * 2
@@ -57,21 +54,25 @@ class HexMap {
         hexes = ((minQ..maxQ) x (minR..maxR)).map { (q, r) -> Hex(q, r) }
     })
 
-    var origin: Point by distinctObservable(Point(0.0, 0.0), { _, _ ->
-        layout = Layout(config.orientation, config.hexSize, origin)
-    })
+    var origin: Point by distinctObservable(Point(0.0, 0.0)) { _, _ -> updateLayout() }
 
     var layout: Layout by distinctObservable(Layout(config.orientation, config.hexSize, origin))
-    { _, _ -> grid = hexes.map { it to layout.polygonCorners(it) }.toMap() }
+    { _, _ -> updateGrid() }
         private set
 
-    var hexes: List<Hex> by distinctObservable(emptyList()) { _, _ ->
-        grid = hexes.map { it to layout.polygonCorners(it) }.toMap()
-    }
+    var hexes: List<Hex> by distinctObservable(emptyList()) { _, _ -> updateGrid() }
         private set
 
     var grid: Map<Hex, HexPolygon> = emptyMap()
         private set
+
+    private fun updateLayout() {
+        layout = Layout(config.orientation, config.hexSize, origin)
+    }
+
+    private fun updateGrid() {
+        grid = hexes.map { it to layout.polygonCorners(it) }.toMap()
+    }
 }
 
 class AnimatedHexGrid : Animator {
