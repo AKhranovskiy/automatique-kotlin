@@ -205,8 +205,11 @@ class CoordinatesLayer(private val hexMap: HexMap) : CanvasLayer() {
     private fun Int.toSignedString(): String = if (this > 0) "+$this" else "$this"
 }
 
-class SelectionLayer(private val hexMap: HexMap, private val selection: Set<Hex>) :
+class SelectionLayer(private val hexMap: HexMap) :
     CanvasLayer() {
+
+    var selection: Set<Hex> by distinctObservable(emptySet()) { _, _ -> invalidate() }
+
     override fun onDraw() {
         ctx.strokeStyle = "lightgreen"
         ctx.lineWidth = 4.0
@@ -245,10 +248,10 @@ class LayerContainer(vararg layers: CanvasLayer) {
     }
 }
 
-class SelectionController {
-    val selection = mutableSetOf<Hex>()
+class SelectionController(private val onSelectionChanged: (selection: Set<Hex>) -> Unit) {
+    private val selection = mutableSetOf<Hex>()
 
-    fun onClick(event: MouseEvent, hex: Hex, onSelectionChanged: () -> Unit) {
+    fun onClick(event: MouseEvent, hex: Hex) {
         when {
             // Ctrl click calls context menu.
             event.ctrlKey -> Unit
@@ -256,13 +259,13 @@ class SelectionController {
                 in selection -> selection -= hex
                 else -> selection += hex
             }.also {
-                onSelectionChanged()
+                onSelectionChanged(selection)
             }
             else -> selection.apply {
                 clear()
                 add(hex)
             }.also {
-                onSelectionChanged()
+                onSelectionChanged(selection)
             }
         }
     }
@@ -273,8 +276,8 @@ class AnimatedHexGrid : Animator {
     private val gridLayer = GridLayer(hexMap)
     private val coordinatesLayer = CoordinatesLayer(hexMap)
 
-    private val selectionController = SelectionController()
-    private val selectionLayer = SelectionLayer(hexMap, selectionController.selection)
+    private val selectionLayer = SelectionLayer(hexMap)
+    private val selectionController = SelectionController { selectionLayer.selection = it }
 
     private val layerContainer = LayerContainer(gridLayer, coordinatesLayer, selectionLayer)
 
@@ -379,9 +382,7 @@ class AnimatedHexGrid : Animator {
             .let { Point(it.offsetX, it.offsetY) }
             .let { hexMap.layout.toHex(it).round() }
 
-        selectionController.onClick(event, hex) {
-            selectionLayer.invalidate()
-        }
+        selectionController.onClick(event, hex)
 
         when {
             event.shiftKey && event.altKey -> {
