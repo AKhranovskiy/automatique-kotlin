@@ -116,34 +116,34 @@ abstract class CanvasLayer {
     protected abstract fun onDraw()
 }
 
+class PathUtil {
+    companion object {
+        fun toPolygon(points: List<Point>) = Path2D().apply {
+            if (points.isNotEmpty()) {
+                val start = points.first()
+                moveTo(start.x, start.y)
+                points.drop(1).forEach { lineTo(it.x, it.y) }
+                lineTo(start.x, start.y)
+            }
+        }
+
+        fun toCircle(point: Point, radius: Int = 1) = Path2D().apply {
+            moveTo(point.x - radius, point.y - radius)
+            arc(point.x, point.y, radius.toDouble(), 0.0, kotlin.math.PI * 2.0)
+        }
+    }
+}
+
 class GridLayer(private val hexMap: HexMap, private val showCenter: Boolean = false) :
     CanvasLayer() {
     override fun onDraw() {
         Path2D().apply {
-            hexMap.grid.values
-                .filter { (center, _) -> rect.contains(center) }
-                .forEach { (center, corners) ->
-                    addPath(corners.toPolygon())
-                    addPath(center.toCircle())
-                }
-        }.let {
-            ctx.stroke(it)
-        }
-    }
-
-    private fun List<Point>.toPolygon() = Path2D().apply {
-        if (isNotEmpty()) {
-            val start = first()
-            moveTo(start.x, start.y)
-            drop(1).forEach { lineTo(it.x, it.y) }
-            lineTo(start.x, start.y)
-        }
-    }
-
-    private fun Point.toCircle(radius: Int = 1) = Path2D().apply {
-        if (showCenter) {
-            moveTo(x - radius, y - radius)
-            arc(x, y, radius.toDouble(), 0.0, kotlin.math.PI * 2.0)
+            hexMap.grid.values.filter { (center, _) -> rect.contains(center) }.let {
+                it.forEach { (_, corners) -> addPath(PathUtil.toPolygon(corners)) }
+                if (showCenter) it.forEach { (center, _) -> addPath(PathUtil.toCircle(center)) }
+            }.let {
+                ctx.stroke(this)
+            }
         }
     }
 }
@@ -205,8 +205,24 @@ class CoordinatesLayer(private val hexMap: HexMap) : CanvasLayer() {
     private fun Int.toSignedString(): String = if (this > 0) "+$this" else "$this"
 }
 
-class LayerContainer {
-    private val container = mutableListOf<CanvasLayer>()
+class SelectionLayer(private val hexMap: HexMap, private val selection: Set<Hex>) :
+    CanvasLayer() {
+    override fun onDraw() {
+        ctx.strokeStyle = "lightgreen"
+        ctx.lineWidth = 4.0
+
+        Path2D().apply {
+            selection.mapNotNull { hexMap.grid[it]?.corners }.forEach {
+                addPath(PathUtil.toPolygon(it))
+            }
+        }.let {
+            ctx.stroke(it)
+        }
+    }
+}
+
+class LayerContainer(vararg layers: CanvasLayer) {
+    private val container = layers.toMutableList()
 
     fun resize(size: Size) {
         container.forEach { it.size = size }
@@ -233,15 +249,17 @@ class AnimatedHexGrid : Animator {
     private val hexMap = HexMap()
     private val gridLayer = GridLayer(hexMap)
     private val coordinatesLayer = CoordinatesLayer(hexMap)
-    private val layerContainer = LayerContainer().apply {
-        add(gridLayer)
-        add(coordinatesLayer)
-    }
+
+    private val selectedHex = mutableSetOf<Hex>()
+    private val selectionLayer = SelectionLayer(hexMap, selectedHex)
+
+    private val layerContainer = LayerContainer(gridLayer, coordinatesLayer, selectionLayer)
 
     private var timestamps = mutableListOf<Double>()
     private val timestampsLength = 100
 
-    private fun Double.equalsDelta(other: Double) = (this / other - 1.0).absoluteValue < 0.000001
+    private fun Double.equalsDelta(other: Double) =
+        (this / other - 1.0).absoluteValue < 0.000001
 
     private fun drawFps(ctx: CanvasRenderingContext2D) {
         timestamps.add(window.performance.now() - timestamp)
@@ -271,7 +289,6 @@ class AnimatedHexGrid : Animator {
     private fun onResize() {
         layerContainer.resize(canvasSize)
 
-        offscreenCanvasSelection = null
         offscreenCanvasPond = null
     }
 
@@ -293,24 +310,6 @@ class AnimatedHexGrid : Animator {
     override fun draw(ctx: CanvasRenderingContext2D) {
         canvasSize = ctx.size
         hexMap.size = ctx.size
-
-        if (selectedHex.isNotEmpty() && offscreenCanvasSelection == null) {
-            offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
-                strokeStyle = "lightgreen"
-                lineWidth = 4.0
-
-                Path2D().apply {
-                    selectedHex.mapNotNull { hexMap.grid[it]?.corners }.forEach {
-//                        addPath(drawSides(it))
-                    }
-                }.let {
-                    stroke(it)
-
-                }
-
-//                selectedHex.forEach { drawCoordinates(this, it) }
-            }
-        }
 
         if (pond.isNotEmpty() && offscreenCanvasPond == null) {
             offscreenCanvasPond = createOffscreenCanvas(canvasSize) {
@@ -339,7 +338,6 @@ class AnimatedHexGrid : Animator {
 
         offscreenCanvasPond?.copyOn(ctx)
         layerContainer.draw(ctx)
-        offscreenCanvasSelection?.copyOn(ctx)
 
         drawFps(ctx)
     }
@@ -353,18 +351,16 @@ class AnimatedHexGrid : Animator {
         }
     }
 
-    private var offscreenCanvasSelection: HTMLCanvasElement? = null
-    private val selectedHex = mutableSetOf<Hex>()
-
     private fun onEventClick(event: MouseEvent) {
-        offscreenCanvasSelection = null
         val hex = event
             .let { Point(it.offsetX, it.offsetY) }
             .let { hexMap.layout.toHex(it).round() }
 
         when {
-            hex in selectedHex -> selectedHex -= hex
-            event.shiftKey -> selectedHex += hex
+            event.shiftKey -> when (hex) {
+                in selectedHex -> selectedHex -= hex
+                else -> selectedHex += hex
+            }
             // Ctrl click calls context menu.
             event.ctrlKey -> Unit
             else -> selectedHex.apply {
@@ -372,6 +368,8 @@ class AnimatedHexGrid : Animator {
                 add(hex)
             }
         }
+        selectionLayer.invalidate()
+
         when {
             event.shiftKey && event.altKey -> {
                 spoil(hex)
