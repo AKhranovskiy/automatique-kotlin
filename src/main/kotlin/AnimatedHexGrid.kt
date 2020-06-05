@@ -10,6 +10,8 @@ import kotlin.browser.document
 import kotlin.browser.window
 import kotlin.dom.createElement
 import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.properties.ObservableProperty
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
@@ -41,8 +43,18 @@ class HexMap {
     })
 
     var size: Size by distinctObservable(Size(0.0, 0.0), { _, _ ->
-        // TODO calculate hexes based on size
-        hexes = ((-20..45) x (-30..30)).map { (q, r) -> Hex(q, r) }
+        val width = config.hexSize.x * 2
+        val horizontalSpacing = width * 3 / 4
+        val minQ = 0
+        val maxQ = (size.x / horizontalSpacing).toInt()
+
+        val height = config.hexSize.y * sqrt(3.0f)
+
+        // Every q-column takes half of r-column.
+        val minR = -maxQ / 2
+        val maxR = (size.y / height).toInt()
+
+        hexes = ((minQ..maxQ) x (minR..maxR)).map { (q, r) -> Hex(q, r) }
     })
 
     var origin: Point by distinctObservable(Point(0.0, 0.0), { _, _ ->
@@ -171,10 +183,6 @@ class AnimatedHexGrid : Animator {
         height = size.y.toInt()
     }.apply {
         onContext2D(getContext("2d") as CanvasRenderingContext2D)
-    }
-
-    init {
-        console.log(hexMap)
     }
 
     override fun draw(ctx: CanvasRenderingContext2D) {
