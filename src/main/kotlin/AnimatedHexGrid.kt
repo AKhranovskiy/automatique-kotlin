@@ -1,7 +1,5 @@
-import kotlinx.css.Contain
 import org.w3c.dom.CanvasRenderingContext2D
 import org.w3c.dom.CanvasTextBaseline
-import org.w3c.dom.HANGING
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.MIDDLE
 import org.w3c.dom.Path2D
@@ -12,7 +10,9 @@ import kotlin.browser.document
 import kotlin.browser.window
 import kotlin.dom.createElement
 import kotlin.math.absoluteValue
-import kotlin.math.max
+import kotlin.properties.ObservableProperty
+import kotlin.properties.ReadWriteProperty
+import kotlin.reflect.KProperty
 
 fun <T, U> cartesianProduct(a: Iterable<T>, b: Iterable<U>): List<Pair<T, U>> =
     a.flatMap { va ->
@@ -21,19 +21,49 @@ fun <T, U> cartesianProduct(a: Iterable<T>, b: Iterable<U>): List<Pair<T, U>> =
 
 infix fun <T, U> Iterable<T>.x(other: Iterable<U>) = cartesianProduct(this, other)
 
+data class HexConfig(
+    val orientation: Orientation = Orientation.Flat,
+    val hexSize: Size = Size(40.0, 40.0)
+)
+
+inline fun <T> distinctObservable(
+    initialValue: T,
+    crossinline onChange: (oldValue: T, newValue: T) -> Unit
+): ReadWriteProperty<Any?, T> = object : ObservableProperty<T>(initialValue) {
+    override fun afterChange(property: KProperty<*>, oldValue: T, newValue: T) {
+        if (oldValue != newValue) onChange(oldValue, newValue)
+    }
+}
+
+class HexMap {
+    var config: HexConfig by distinctObservable(HexConfig(), { _, new ->
+        layout = Layout(new.orientation, new.hexSize, origin)
+    })
+
+    var size: Size by distinctObservable(Size(0.0, 0.0), { _, _ ->
+        // TODO calculate hexes based on size
+        hexes = ((-20..45) x (-30..30)).map { (q, r) -> Hex(q, r) }
+    })
+
+    var origin: Point by distinctObservable(Point(0.0, 0.0), { _, _ ->
+        layout = Layout(config.orientation, config.hexSize, origin)
+    })
+
+    var layout: Layout by distinctObservable(Layout(config.orientation, config.hexSize, origin))
+    { _, _ -> grid = hexes.map { it to layout.polygonCorners(it) }.toMap() }
+        private set
+
+    var hexes: List<Hex> by distinctObservable(emptyList()) { _, _ ->
+        grid = hexes.map { it to layout.polygonCorners(it) }.toMap()
+    }
+        private set
+
+    var grid: Map<Hex, HexPolygon> = emptyMap()
+        private set
+}
+
 class AnimatedHexGrid : Animator {
-    private val size = Size(40.0, 40.0)
-    private val origin = Point(0.0, 0.0)
-
-    private val pointyLayout = Layout(Orientation.Pointy, size, origin)
-    private val flatLayout = Layout(Orientation.Flat, size, origin)
-
-    private val hexes = ((-20..45) x (-30..30)).map { (q, r) -> Hex(q, r) }
-
-    private fun List<Hex>.toGrid(layout: Layout) = map { layout.polygonCorners(it) }
-
-    private val layout = flatLayout
-    private val grid = hexes.toGrid(layout)
+    private val hexMap = HexMap()
 
     private fun drawCenter(point: Point): Path2D {
         val path = Path2D()
@@ -58,8 +88,8 @@ class AnimatedHexGrid : Animator {
     }
 
     private fun drawCoordinates(ctx: CanvasRenderingContext2D, hex: Hex) {
-        val center = layout.toPixel(hex)
-        ctx.font = "bold ${layout.size.x / 3}pt monospace"
+        val center = hexMap.layout.toPixel(hex)
+        ctx.font = "bold ${hexMap.config.hexSize.x / 3}pt monospace"
         val q = formatHexCoordinate("q", hex.q)
         val r = formatHexCoordinate("r", hex.r)
         val s = formatHexCoordinate("s", hex.s)
@@ -69,16 +99,16 @@ class AnimatedHexGrid : Animator {
         ctx.fillStyle = "green"
         ctx.fillText(
             q,
-            center.x - size.x * 5 / 8,
-            center.y - size.y / 2
+            center.x - hexMap.config.hexSize.x * 5 / 8,
+            center.y - hexMap.config.hexSize.y / 2
         )
 
         val rx = ctx.measureText(r)
         ctx.fillStyle = "blue"
         ctx.fillText(
             r,
-            center.x + size.x * 5 / 8 - rx.width,
-            center.y - size.y / 2
+            center.x + hexMap.config.hexSize.x * 5 / 8 - rx.width,
+            center.y - hexMap.config.hexSize.y / 2
         )
 
         val sx = ctx.measureText(s)
@@ -86,7 +116,7 @@ class AnimatedHexGrid : Animator {
         ctx.fillText(
             s,
             center.x - sx.width / 2,
-            center.y + size.y / 4
+            center.y + hexMap.config.hexSize.y / 4
         )
     }
 
@@ -120,13 +150,7 @@ class AnimatedHexGrid : Animator {
 
     private var timestamp = window.performance.now()
 
-    private var canvasSize = Size(0.0, 0.0)
-        set(value) {
-            if (field != value) {
-                onResize()
-            }
-            field = value
-        }
+    private var canvasSize: Size by distinctObservable(Size(0.0, 0.0)) { _, _ -> onResize() }
 
     private fun onResize() {
         offscreenCanvasGrid = null
@@ -149,29 +173,34 @@ class AnimatedHexGrid : Animator {
         onContext2D(getContext("2d") as CanvasRenderingContext2D)
     }
 
+    init {
+        console.log(hexMap)
+    }
+
     override fun draw(ctx: CanvasRenderingContext2D) {
         canvasSize = ctx.size
+        hexMap.size = ctx.size
 
         if (offscreenCanvasGrid == null) {
             offscreenCanvasGrid = createOffscreenCanvas(canvasSize) {
                 val width = canvas.width.toDouble()
                 val height = canvas.height.toDouble()
 
-                val path = Path2D()
-
-                grid.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
-                    .forEach { (center, corners) ->
-                        path.addPath(drawSides(corners))
-                        path.addPath(drawCenter(center))
-                    }
-
-                stroke(path)
+                Path2D().apply {
+                    hexMap.grid.values.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
+                        .forEach { (center, corners) ->
+                            addPath(drawSides(corners))
+                            addPath(drawCenter(center))
+                        }
+                }.let {
+                    stroke(it)
+                }
             }
         }
 
         if (offscreenCanvasCoordinates == null) {
             offscreenCanvasCoordinates = createOffscreenCanvas(canvasSize) {
-                hexes.forEach { drawCoordinates(this, it) }
+                hexMap.hexes.forEach { drawCoordinates(this, it) }
             }
         }
 
@@ -180,11 +209,14 @@ class AnimatedHexGrid : Animator {
                 strokeStyle = "lightgreen"
                 lineWidth = 4.0
 
-                val path = Path2D()
-                selectedHex.map { layout.polygonCorners(it).second }.forEach {
-                    path.addPath(drawSides(it))
+                Path2D().apply {
+                    selectedHex.mapNotNull { hexMap.grid[it]?.corners }.forEach {
+                        addPath(drawSides(it))
+                    }
+                }.let {
+                    stroke(it)
+
                 }
-                stroke(path)
 
                 selectedHex.forEach { drawCoordinates(this, it) }
             }
@@ -192,26 +224,22 @@ class AnimatedHexGrid : Animator {
 
         if (pond.isNotEmpty() && offscreenCanvasPond == null) {
             offscreenCanvasPond = createOffscreenCanvas(canvasSize) {
-                pond.map { (hex, power) ->
-                    layout.polygonCorners(hex).second to power.coerceIn(0, 100) / 100.0
+                pond.mapNotNull { (hex, power) ->
+                    hexMap.grid[hex]?.corners?.let { it to power.coerceIn(0, 100) / 100.0 }
                 }.forEach { (points, alpha) ->
-                    val path = drawSides(points)
                     fillStyle = "rgb(255, 0, 0, $alpha)"
-                    fill(path)
-
+                    fill(drawSides(points))
                 }
-                pond.forEach { (hex, power) ->
+
+                pond.mapNotNull { (hex, power) ->
+                    hexMap.grid[hex]?.center?.let { it to power.toString() }
+                }.forEach { (center, t) ->
                     fillStyle = "black"
-                    font = "bold ${layout.size.x / 3}pt monospace"
-                    val t = power.toString()
-                    val tx = measureText(t)
-                    val center = layout.toPixel(hex)
+                    font = "bold ${hexMap.config.hexSize.x / 3}pt monospace"
                     textBaseline = CanvasTextBaseline.MIDDLE
-                    fillText(
-                        t,
-                        center.x - tx.width / 2,
-                        center.y
-                    )
+
+                    val tx = measureText(t)
+                    fillText(t, center.x - tx.width / 2, center.y)
                 }
             }
         }
@@ -220,8 +248,8 @@ class AnimatedHexGrid : Animator {
         ctx.fillRect(0.0, 0.0, canvasSize.x, canvasSize.y)
 
         offscreenCanvasPond?.copyOn(ctx)
-//        offscreenCanvasGrid?.copyOn(ctx)
-//        offscreenCanvasCoordinates?.copyOn(ctx)
+        offscreenCanvasGrid?.copyOn(ctx)
+        offscreenCanvasCoordinates?.copyOn(ctx)
         offscreenCanvasSelection?.copyOn(ctx)
 
         drawFps(ctx)
@@ -246,33 +274,32 @@ class AnimatedHexGrid : Animator {
 
     private fun onEventClick(event: MouseEvent) {
         offscreenCanvasSelection = null
-        val hex =
-            event.let { Point(it.offsetX, it.offsetY) }.let { layout.toHex(it).round() }
+        val hex = event
+            .let { Point(it.offsetX, it.offsetY) }
+            .let { hexMap.layout.toHex(it).round() }
 
         when {
             hex in selectedHex -> selectedHex -= hex
+            event.shiftKey -> selectedHex += hex
             // Ctrl click calls context menu.
             event.ctrlKey -> Unit
-            event.shiftKey && event.altKey -> {
-                spoil(hex)
-                offscreenCanvasPond = null
-            }
-            event.shiftKey -> selectedHex += hex
-            event.altKey -> {
-                pond.clear()
-                spoil(hex)
-                offscreenCanvasPond = null
-            }
             else -> selectedHex.apply {
                 clear()
                 add(hex)
             }
         }
-//        selectedHex.forEach { h ->
-//            pond[h]?.let { power ->
-//                console.log("$h->$power")
-//            }
-//        }
+        when {
+            event.shiftKey && event.altKey -> {
+                spoil(hex)
+                offscreenCanvasPond = null
+            }
+            event.altKey -> {
+                pond.clear()
+                spoil(hex)
+                offscreenCanvasPond = null
+            }
+        }
+
     }
 
     private val pond = mutableMapOf<Hex, Int>()

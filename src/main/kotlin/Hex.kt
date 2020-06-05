@@ -104,6 +104,8 @@ data class FractionalHex(val q: Double = 0.0, val r: Double = 0.0, val s: Double
     }
 }
 
+data class HexPolygon(val center: Point, val corners: List<Point>)
+
 data class Layout(val orientation: Orientation, val size: Size, val origin: Point) {
     fun toPixel(hex: Hex): Point =
         Point(orientation.forward * hex.asVector2() * size.asVector2() + origin.asVector2())
@@ -120,12 +122,12 @@ data class Layout(val orientation: Orientation, val size: Size, val origin: Poin
         return Point(size.asVector2() * Vector2(cos(angle), sin(angle)))
     }
 
-    fun polygonCorners(hex: Hex): Pair<Point, List<Point>> =
-        toPixel(hex).let { center ->
-            center to (0..5).map { center.asVector2() + cornerOffset(it).asVector2() }.map {
+    fun polygonCorners(hex: Hex) = toPixel(hex).let { center ->
+        HexPolygon(center,
+            (0..5).map { center.asVector2() + cornerOffset(it).asVector2() }.map {
                 Point(it)
-            }
-        }
+            })
+    }
 }
 
 
