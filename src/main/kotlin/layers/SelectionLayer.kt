@@ -8,7 +8,9 @@ import org.w3c.dom.Path2D
 
 class SelectionLayer(private val hexMap: HexMap) : CanvasLayer() {
 
-    var selection: Set<Hex> by distinctObservable(emptySet()) { _, _ -> invalidate() }
+    var selection: Set<Hex> by distinctObservable(emptySet()) { _, _ ->
+        invalidate()
+    }
 
     override fun onDraw() {
         ctx.strokeStyle = "lightgreen"

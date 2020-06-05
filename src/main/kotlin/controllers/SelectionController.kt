@@ -14,13 +14,13 @@ class SelectionController(private val onSelectionChanged: (selection: Set<Hex>) 
                 in selection -> selection -= hex
                 else -> selection += hex
             }.also {
-                onSelectionChanged(selection)
+                onSelectionChanged(selection.toSet())
             }
             else -> selection.apply {
                 clear()
                 add(hex)
             }.also {
-                onSelectionChanged(selection)
+                onSelectionChanged(selection.toSet())
             }
         }
     }
