@@ -113,7 +113,7 @@ abstract class CanvasLayer {
         canvas.copyOn(destination)
     }
 
-    abstract fun onDraw()
+    protected abstract fun onDraw()
 }
 
 class GridLayer(private val hexMap: HexMap, private val showCenter: Boolean = false) :
@@ -205,10 +205,38 @@ class CoordinatesLayer(private val hexMap: HexMap) : CanvasLayer() {
     private fun Int.toSignedString(): String = if (this > 0) "+$this" else "$this"
 }
 
+class LayerContainer {
+    private val container = mutableListOf<CanvasLayer>()
+
+    fun resize(size: Size) {
+        container.forEach { it.size = size }
+    }
+
+    fun draw(destination: CanvasRenderingContext2D) = container.forEach { it.draw(destination) }
+
+    fun invalidate() = container.forEach { it.invalidate() }
+
+    fun add(layer: CanvasLayer) {
+        require(!container.contains(layer)) { "Layer is already added." }
+        container += layer
+        layer.invalidate()
+    }
+
+    fun remove(layer: CanvasLayer) {
+        require(container.contains(layer)) { "Layer is not added." }
+        container -= layer
+        layer.invalidate()
+    }
+}
+
 class AnimatedHexGrid : Animator {
     private val hexMap = HexMap()
     private val gridLayer = GridLayer(hexMap)
     private val coordinatesLayer = CoordinatesLayer(hexMap)
+    private val layerContainer = LayerContainer().apply {
+        add(gridLayer)
+        add(coordinatesLayer)
+    }
 
     private var timestamps = mutableListOf<Double>()
     private val timestampsLength = 100
@@ -241,8 +269,7 @@ class AnimatedHexGrid : Animator {
     private var canvasSize: Size by distinctObservable(Size(0.0, 0.0)) { _, _ -> onResize() }
 
     private fun onResize() {
-        gridLayer.invalidate()
-        coordinatesLayer.invalidate()
+        layerContainer.resize(canvasSize)
 
         offscreenCanvasSelection = null
         offscreenCanvasPond = null
@@ -266,8 +293,6 @@ class AnimatedHexGrid : Animator {
     override fun draw(ctx: CanvasRenderingContext2D) {
         canvasSize = ctx.size
         hexMap.size = ctx.size
-        gridLayer.size = ctx.size
-        coordinatesLayer.size = ctx.size
 
         if (selectedHex.isNotEmpty() && offscreenCanvasSelection == null) {
             offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
@@ -313,8 +338,7 @@ class AnimatedHexGrid : Animator {
         ctx.fillRect(0.0, 0.0, canvasSize.x, canvasSize.y)
 
         offscreenCanvasPond?.copyOn(ctx)
-        gridLayer.draw(ctx)
-        coordinatesLayer.draw(ctx)
+        layerContainer.draw(ctx)
         offscreenCanvasSelection?.copyOn(ctx)
 
         drawFps(ctx)
