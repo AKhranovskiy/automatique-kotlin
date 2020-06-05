@@ -146,9 +146,12 @@ class GridLayer(private val hexMap: HexMap, private val showCenter: Boolean = fa
     }
 }
 
-class AnimatedHexGrid : Animator {
-    private val hexMap = HexMap()
-    private val gridLayer = GridLayer(hexMap)
+class CoordinatesLayer(private val hexMap: HexMap) : CanvasLayer() {
+    override fun onDraw() {
+        hexMap.grid
+            .filter { (_, polygon) -> rect.contains(polygon.center) }
+            .keys.forEach { drawCoordinates(it) }
+    }
 
     private fun formatHexCoordinate(name: String, value: Int): String = when {
         value == 0 -> name
@@ -156,7 +159,7 @@ class AnimatedHexGrid : Animator {
         else -> value.toString()
     }
 
-    private fun drawCoordinates(ctx: CanvasRenderingContext2D, hex: Hex) {
+    private fun drawCoordinates(hex: Hex) {
         val center = hexMap.layout.toPixel(hex)
         ctx.font = "bold ${hexMap.config.hexSize.x / 3}pt monospace"
         val q = formatHexCoordinate("q", hex.q)
@@ -188,8 +191,12 @@ class AnimatedHexGrid : Animator {
             center.y + hexMap.config.hexSize.y / 4
         )
     }
+}
 
-    private var offscreenCanvasCoordinates: HTMLCanvasElement? = null
+class AnimatedHexGrid : Animator {
+    private val hexMap = HexMap()
+    private val gridLayer = GridLayer(hexMap)
+    private val coordinatesLayer = CoordinatesLayer(hexMap)
 
     private var timestamps = mutableListOf<Double>()
     private val timestampsLength = 100
@@ -223,6 +230,7 @@ class AnimatedHexGrid : Animator {
 
     private fun onResize() {
         gridLayer.invalidate()
+        coordinatesLayer.invalidate()
 
         offscreenCanvasSelection = null
         offscreenCanvasPond = null
@@ -247,12 +255,7 @@ class AnimatedHexGrid : Animator {
         canvasSize = ctx.size
         hexMap.size = ctx.size
         gridLayer.size = ctx.size
-
-        if (offscreenCanvasCoordinates == null) {
-            offscreenCanvasCoordinates = createOffscreenCanvas(canvasSize) {
-                hexMap.hexes.forEach { drawCoordinates(this, it) }
-            }
-        }
+        coordinatesLayer.size = ctx.size
 
         if (selectedHex.isNotEmpty() && offscreenCanvasSelection == null) {
             offscreenCanvasSelection = createOffscreenCanvas(canvasSize) {
@@ -268,7 +271,7 @@ class AnimatedHexGrid : Animator {
 
                 }
 
-                selectedHex.forEach { drawCoordinates(this, it) }
+//                selectedHex.forEach { drawCoordinates(this, it) }
             }
         }
 
@@ -299,7 +302,7 @@ class AnimatedHexGrid : Animator {
 
         offscreenCanvasPond?.copyOn(ctx)
         gridLayer.draw(ctx)
-        offscreenCanvasCoordinates?.copyOn(ctx)
+        coordinatesLayer.draw(ctx)
         offscreenCanvasSelection?.copyOn(ctx)
 
         drawFps(ctx)
