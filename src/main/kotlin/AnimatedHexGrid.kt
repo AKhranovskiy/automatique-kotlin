@@ -343,7 +343,7 @@ class AnimatedHexGrid : Animator {
                     hexMap.grid[hex]?.corners?.let { it to power.coerceIn(0, 100) / 100.0 }
                 }.forEach { (points, alpha) ->
                     fillStyle = "rgb(255, 0, 0, $alpha)"
-//                    fill(drawSides(points))
+                    fill(PathUtil.toPolygon(points))
                 }
 
                 pond.mapNotNull { (hex, power) ->
