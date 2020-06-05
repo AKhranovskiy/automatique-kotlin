@@ -245,13 +245,36 @@ class LayerContainer(vararg layers: CanvasLayer) {
     }
 }
 
+class SelectionController {
+    val selection = mutableSetOf<Hex>()
+
+    fun onClick(event: MouseEvent, hex: Hex, onSelectionChanged: () -> Unit) {
+        when {
+            // Ctrl click calls context menu.
+            event.ctrlKey -> Unit
+            event.shiftKey -> when (hex) {
+                in selection -> selection -= hex
+                else -> selection += hex
+            }.also {
+                onSelectionChanged()
+            }
+            else -> selection.apply {
+                clear()
+                add(hex)
+            }.also {
+                onSelectionChanged()
+            }
+        }
+    }
+}
+
 class AnimatedHexGrid : Animator {
     private val hexMap = HexMap()
     private val gridLayer = GridLayer(hexMap)
     private val coordinatesLayer = CoordinatesLayer(hexMap)
 
-    private val selectedHex = mutableSetOf<Hex>()
-    private val selectionLayer = SelectionLayer(hexMap, selectedHex)
+    private val selectionController = SelectionController()
+    private val selectionLayer = SelectionLayer(hexMap, selectionController.selection)
 
     private val layerContainer = LayerContainer(gridLayer, coordinatesLayer, selectionLayer)
 
@@ -356,19 +379,9 @@ class AnimatedHexGrid : Animator {
             .let { Point(it.offsetX, it.offsetY) }
             .let { hexMap.layout.toHex(it).round() }
 
-        when {
-            event.shiftKey -> when (hex) {
-                in selectedHex -> selectedHex -= hex
-                else -> selectedHex += hex
-            }
-            // Ctrl click calls context menu.
-            event.ctrlKey -> Unit
-            else -> selectedHex.apply {
-                clear()
-                add(hex)
-            }
+        selectionController.onClick(event, hex) {
+            selectionLayer.invalidate()
         }
-        selectionLayer.invalidate()
 
         when {
             event.shiftKey && event.altKey -> {
