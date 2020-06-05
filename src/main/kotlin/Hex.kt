@@ -79,6 +79,10 @@ data class Point(val x: Double, val y: Double) {
     fun asVector2() = Vector2(x, y)
 }
 
+data class Rect(val x: Double, val y: Double, val width: Double, val height: Double) {
+    fun contains(point: Point) = point.x in (x..x + width) && point.y in (y..y + height)
+}
+
 data class Size(val x: Double, val y: Double) {
     fun asVector2() = Vector2(x, y)
 }
