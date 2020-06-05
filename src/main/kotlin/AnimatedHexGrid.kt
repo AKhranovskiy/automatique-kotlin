@@ -36,6 +36,8 @@ inline fun <T> distinctObservable(
     }
 }
 
+typealias HexGrid = Map<Hex, HexPolygon>
+
 class HexMap {
     var config: HexConfig by distinctObservable(HexConfig()) { _, _ -> updateLayout() }
 
@@ -63,7 +65,7 @@ class HexMap {
     var hexes: List<Hex> by distinctObservable(emptyList()) { _, _ -> updateGrid() }
         private set
 
-    var grid: Map<Hex, HexPolygon> = emptyMap()
+    var grid: HexGrid = emptyMap()
         private set
 
     private fun updateLayout() {
@@ -75,24 +77,78 @@ class HexMap {
     }
 }
 
+private fun HTMLCanvasElement.copyOn(ctx: CanvasRenderingContext2D) =
+    ctx.drawImage(this, 0.0, 0.0)
+
+data class Rect(val x: Double, val y: Double, val width: Double, val height: Double) {
+    fun contains(point: Point) = point.x in (x..x + width) && point.y in (y..y + height)
+}
+
+abstract class CanvasLayer {
+    var size: Size by distinctObservable(Size(0.0, 0.0)) { _, _ ->
+        canvas.width = size.x.toInt()
+        canvas.height = size.y.toInt()
+        invalidate()
+    }
+
+    val rect get() = Rect(0.0, 0.0, size.x, size.y)
+
+    private val canvas = document.createElement("canvas") {} as HTMLCanvasElement
+    protected val ctx get() = canvas.getContext("2d") as CanvasRenderingContext2D
+
+    private var isInvalidated = true
+
+    fun invalidate() {
+        ctx.clearRect(rect.x, rect.y, rect.width, rect.height)
+        isInvalidated = true
+    }
+
+    fun draw(destination: CanvasRenderingContext2D) {
+        if (isInvalidated) {
+            onDraw()
+            isInvalidated = false
+        }
+        canvas.copyOn(destination)
+    }
+
+    abstract fun onDraw()
+}
+
+class GridLayer(private val hexMap: HexMap, private val showCenter: Boolean = false) :
+    CanvasLayer() {
+    override fun onDraw() {
+        Path2D().apply {
+            hexMap.grid.values
+                .filter { (center, _) -> rect.contains(center) }
+                .forEach { (center, corners) ->
+                    addPath(corners.toPolygon())
+                    addPath(center.toCircle())
+                }
+        }.let {
+            ctx.stroke(it)
+        }
+    }
+
+    private fun List<Point>.toPolygon() = Path2D().apply {
+        if (isNotEmpty()) {
+            val start = first()
+            moveTo(start.x, start.y)
+            drop(1).forEach { lineTo(it.x, it.y) }
+            lineTo(start.x, start.y)
+        }
+    }
+
+    private fun Point.toCircle(radius: Int = 1) = Path2D().apply {
+        if (showCenter) {
+            moveTo(x - radius, y - radius)
+            arc(x, y, radius.toDouble(), 0.0, kotlin.math.PI * 2.0)
+        }
+    }
+}
+
 class AnimatedHexGrid : Animator {
     private val hexMap = HexMap()
-
-    private fun drawCenter(point: Point): Path2D {
-        val path = Path2D()
-        path.moveTo(point.x - 1, point.y - 1)
-        path.arc(point.x, point.y, 1.0, 0.0, kotlin.math.PI * 2.0)
-        return path
-    }
-
-    private fun drawSides(corners: List<Point>): Path2D {
-        val start = corners.first()
-        val path = Path2D()
-        path.moveTo(start.x, start.y)
-        corners.drop(1).forEach { path.lineTo(it.x, it.y) }
-        path.lineTo(start.x, start.y)
-        return path
-    }
+    private val gridLayer = GridLayer(hexMap)
 
     private fun formatHexCoordinate(name: String, value: Int): String = when {
         value == 0 -> name
@@ -166,7 +222,8 @@ class AnimatedHexGrid : Animator {
     private var canvasSize: Size by distinctObservable(Size(0.0, 0.0)) { _, _ -> onResize() }
 
     private fun onResize() {
-        offscreenCanvasGrid = null
+        gridLayer.invalidate()
+
         offscreenCanvasSelection = null
         offscreenCanvasPond = null
     }
@@ -189,23 +246,7 @@ class AnimatedHexGrid : Animator {
     override fun draw(ctx: CanvasRenderingContext2D) {
         canvasSize = ctx.size
         hexMap.size = ctx.size
-
-        if (offscreenCanvasGrid == null) {
-            offscreenCanvasGrid = createOffscreenCanvas(canvasSize) {
-                val width = canvas.width.toDouble()
-                val height = canvas.height.toDouble()
-
-                Path2D().apply {
-                    hexMap.grid.values.filter { (center, _) -> center.x in 0.0..width && center.y in .0..height }
-                        .forEach { (center, corners) ->
-                            addPath(drawSides(corners))
-                            addPath(drawCenter(center))
-                        }
-                }.let {
-                    stroke(it)
-                }
-            }
-        }
+        gridLayer.size = ctx.size
 
         if (offscreenCanvasCoordinates == null) {
             offscreenCanvasCoordinates = createOffscreenCanvas(canvasSize) {
@@ -220,7 +261,7 @@ class AnimatedHexGrid : Animator {
 
                 Path2D().apply {
                     selectedHex.mapNotNull { hexMap.grid[it]?.corners }.forEach {
-                        addPath(drawSides(it))
+//                        addPath(drawSides(it))
                     }
                 }.let {
                     stroke(it)
@@ -237,7 +278,7 @@ class AnimatedHexGrid : Animator {
                     hexMap.grid[hex]?.corners?.let { it to power.coerceIn(0, 100) / 100.0 }
                 }.forEach { (points, alpha) ->
                     fillStyle = "rgb(255, 0, 0, $alpha)"
-                    fill(drawSides(points))
+//                    fill(drawSides(points))
                 }
 
                 pond.mapNotNull { (hex, power) ->
@@ -257,17 +298,12 @@ class AnimatedHexGrid : Animator {
         ctx.fillRect(0.0, 0.0, canvasSize.x, canvasSize.y)
 
         offscreenCanvasPond?.copyOn(ctx)
-        offscreenCanvasGrid?.copyOn(ctx)
+        gridLayer.draw(ctx)
         offscreenCanvasCoordinates?.copyOn(ctx)
         offscreenCanvasSelection?.copyOn(ctx)
 
         drawFps(ctx)
     }
-
-    private fun HTMLCanvasElement.copyOn(ctx: CanvasRenderingContext2D) =
-        ctx.drawImage(this, 0.0, 0.0)
-
-    private var offscreenCanvasGrid: HTMLCanvasElement? = null
 
     fun onEvent(event: Event) {
         when (event.type) {
